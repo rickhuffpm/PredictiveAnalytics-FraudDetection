@@ -1,0 +1,315 @@
+---
+title: "Fraud Case Study: Data Exploration and Handling Missing Values"
+output: html_notebook
+---
+
+
+### Loading the FRAUD CASE STUDY data into R
+### Data dictionary
+```{r}
+# "ID":     a factor for the salesman ID
+# "Prod":   a factor for the product ID
+# "Quant":  sales units
+# "Val":    sales dollar amount
+# "Fraud":  label for fraud inspection status (on the reported sales dollar amount)
+
+# Code adapted from "Data Mining with R: Learning with Case Studies", # by L.Torgo
+```
+
+# Set working directory and install/load packages
+```{r}
+getwd() # "C:/Users/richa/OneDrive/Documents/Machine_Learning/Fraud_Case_Study"
+setwd('C:/Users/richa/OneDrive/Documents/Machine_Learning/Fraud_Case_Study')
+#install.packages("DMwR")
+library(DMwR)
+```
+
+# Read in Data
+```{r}
+path <- 'Sales.csv'
+sales <- read.csv(path,header=TRUE)
+head(sales)
+    # X ID Prod Quant   Val Insp
+    # 1 1 v1   p1   182  1665 unkn
+    # 2 2 v2   p1  3072  8780 unkn
+    # 3 3 v3   p1 20393 76990 unkn
+    # 4 4 v4   p1   112  1100 unkn
+    # 5 5 v3   p1  6164 20260 unkn
+    # 6 6 v5   p2   104  1155 unkn
+
+names(sales)[2] <- 'salespersonID'
+names(sales)[3] <- 'productID'
+names(sales)[4] <- 'quantitySold'
+names(sales)[5] <- 'salesDollarAmount'
+names(sales)[6] <- 'inpsectionStatus'
+head(sales)
+```
+
+
+
+## Exploring the data set
+```{r}
+# What fields are in the data and what are their characteristics?
+summary(sales)
+# What is the structure of the datset?
+str(sales)
+# How many salesman?
+nlevels(sales$salespersonID)
+# How many products?
+nlevels(sales$productID)
+# How many missing values?
+sum(is.na(sales$quantitySold) & is.na(sales$salesDollarAmount))
+
+# Frequency distribution for fraud
+fraud <- table(sales$inpsectionStatus)
+fraud
+# Number of sales records
+salesNum <- nrow(sales)
+salesNum
+# Percentage of different types of sales records ('fraud', 'ok', 'unkn')
+fraud.percent <- fraud/salesNum*100
+fraud.percent
+
+# Number of transactions by salesman
+totS <- table(sales$salespersonID)
+# Coefficient of variation
+totS.cv <- sd(totS)/mean(totS)
+# Take and view a sample of 50 salespeople
+totS.spl <- totS[1:50]
+barplot(totS.spl, col= 'darkgreen', main = 'Transactions Per Salesperson', names.arg = '', xlab = 'Salespeople', ylab = 'Amount')
+
+# Number of transactions by products
+totP <- table(sales$productID)
+# Coefficient of variation
+totP.cv <- sd(totP)/mean(totP)
+# Take and view a sample of 50 products
+totP.spl <- totP[1:50]
+barplot(totP.spl, col = 'darkblue', main = 'Transactions per Product', names.arg = '', xlab = 'Products', ylab = 'Amount')
+
+# Show both charts (Run next 3 rows)
+par(mfrow=c(1,2))
+barplot(totS.spl, col= 'darkgreen', main = 'Transactions Per Salesperson', names.arg = '', xlab = 'Salespeople', ylab = 'Amount')
+barplot(totP.spl, col = 'darkblue', main = 'Transactions per Product', names.arg = '', xlab = 'Products', ylab = 'Amount')
+
+```
+
+# Look at the prices of the products
+```{r}
+## Derive the product price using sales quantity and dollar value
+# Add a new column for price and summarize
+sales$Uprice <- sales$salesDollarAmount/sales$quantitySold
+summary(sales$Uprice)
+
+# Check out the median price by product
+attach(sales)
+upp <- aggregate(Uprice,list(productID), median, na.rm = T)
+upp
+# or (this option takes longer to output)
+upp.1 <- by(Uprice, productID, median)
+
+# Plot the distribution of the product mean price (prices do not have single price point because of negotiations, discounts, promotions)
+hist(upp[,2], col= 'darkgreen', main = 'Price Distribution')
+# Limit the price to a regular range by subsetting the 'upp' data
+hist(upp[which(upp$x < 100),]$x, col= 'darkgreen', main='Price Distribution')
+# Compare both charts
+par(mfrow=c(1,2))
+hist(upp[,2], col= 'darkgreen', main = 'Price Distribution')
+hist(upp[which(upp$x < 100),]$x, col= 'darkgreen', main='Price Distribution')
+
+# Base on price, what are the five most and five least expensive products?
+topP <- sapply(c(T,F), function(x) upp[order(upp[,2], decreasing = x)[1:5],1])
+colnames(topP) <- c('Expensive', 'Cheap')
+topP
+# What is the most and least expensive product?
+topP[1,]
+    # Expensive     Cheap 
+    #   "p3689"    "p560" 
+  
+```
+
+## Look deeper to see the price distributions of the most and least expensive products
+```{r}
+# Obtain all price points from the dataset for these two products
+tops <- sales[productID %in% topP[1,], c("productID", "Uprice")]
+tops$productID <- factor(tops$productID)
+
+# Plot the boxplots together.  Use a log scale to avoid the cheapest item becoming indistinguishable.
+par(mfrow=c(1,2))
+boxplot(Uprice ~ productID, data = tops, ylab = 'Uprice', col = 'darkred', xlab = paste('Most Expensive', '         ', 'Least Expensive'), main = 'Price Distributions')
+boxplot(Uprice ~ productID, data = tops, ylab = 'Uprice', col = 'darkred', log = 'y', xlab = paste('Most Expensive', '         ', 'Least Expensive'), main = 'Price Distributions')
+```
+
+## Explore the highest and lowest performing salespeople by summing their sales
+```{r}
+# Create dataframe to hold this aggregated data
+vs <- aggregate(salesDollarAmount, list(salespersonID), sum, na.rm = T)
+scoresSs <- sapply(c(T,F), function(o) vs[order(vs$x, decreasing=o)[1:5],1])
+# Add column names
+colnames(scoresSs) <- c('Most', 'Least')
+# View
+scoresSs
+# The most and least performing salespeople
+unique(scoresSs[1,]) # or I believe also
+scoresSs[1,]
+
+```
+
+## Explore what percent of sales questions
+```{r}
+# What percent of sales do the top 100 salespeople generate?
+sum(vs[order(vs$x, decreasing=T)[1:100], 2])/sum(salesDollarAmount, na.rm=T)*100 # 38.33277
+sum(as.double(vs[order(vs$x, decreasing=T)[1:100], 2]))/sum(as.double(salesDollarAmount), na.rm=T)*100  # 38.33277
+
+# What percent of sales do the bottom 2000 salespeople generate?
+sum(as.double(vs[order(vs$x, decreasing = F)[1:2000],2]))/sum(as.double(salesDollarAmount), na.rm=T)*100 # 1.988716
+
+# Explore the best and least sales items by summing up quantity
+qs <- aggregate(quantitySold, list(productID), sum, na.rm=T)
+scoresPs <- sapply(c(T,F), function(o) qs[order(qs$x, decreasing=o)[1:5], 1])
+colnames(scoresPs) <- c('Most', 'Least')
+scoresPs
+
+# What percent of sales do the top 100 most expensive products generate?
+sum(as.double(qs[order(qs$x, decreasing=T)[1:100], 2]))/sum(as.double(quantitySold), na.rm=T)*100 # 74.63478
+
+# What percent of sales do the bottom 4000 least expensive products generate?
+sum(as.double(qs[order(qs$x, decreasing=F)[1:4000], 2]))/sum(as.double(quantitySold), na.rm=T)*100 # 8.944681
+```
+
+## Apply outlier detection techniques to this dataset
+```{r}
+# Outlier identification method will directly extract outliers defined in the boxplot (by IQR)
+# Can use tapply to apply self-defined function at the product level on price
+outlier <- tapply(Uprice, list(productID=productID), function(x) length(boxplot.stats(x)$out))
+
+# Outliers are identified for each product based on its price distribution
+# 10 products with highest number of outliers are pinned down
+top10.out.items <- outlier[order(outlier, decreasing=T)[1:10]]
+
+# What percent of all data in these records are outliers? (This will determine how we process them.)
+sum(outlier) # 29,446 transactions from the outlier observations
+sum(outlier)/nrow(sales)*100  # 7.34047
+
+```
+
+## Missing Values
+```{r}
+attach(sales)
+
+# Calculate transactions by salesman
+totS <- table(salespersonID)
+
+# Calculate transactions by product
+totP <- table(productID)
+
+# Missing values in both sales quantity and dollar value
+nas <- sales[which(is.na(quantitySold) & is.na(salesDollarAmount)), c('salespersonID', 'productID')]
+
+# Percentage transactions with missing values by salesperson
+propS <- 100*table(nas$salespersonID)/totS
+
+# Top 10 salespeople with missing values (by %missing values)
+propS[order(propS, decreasing=T)[1:10]]
+    #     v1237     v4254     v4038     v5248     v3666     v4433     v4170     v4926     v4664     v4642 
+    # 13.793103  9.523810  8.333333  8.333333  6.666667  6.250000  5.555556  5.555556  5.494505  4.761905 
+
+# Percentage sales transactions with missing values by product
+propP <- 100*table(nas$productID)/totP
+
+# Top 10 products with missing values (by %missing values)
+propP[order(propP, decreasing=T)[1:10]]
+    #    p2689    p2675    p4061    p2780    p4351    p2686    p2707    p2690    p2691    p2670 
+    # 39.28571 35.41667 25.00000 22.72727 18.18182 16.66667 14.28571 14.08451 12.90323 12.76596 
+
+
+```
+
+## Handle Missing Value
+```{r}
+# Need to handle the records with missing values
+# Missingness is not overwhelming, therefor we remove the few product records with missing values
+# First, remove records with both quantitySold and salesDollarAmount missing.
+# Then, look at what is still missing from quantitySold by product
+detach(sales)
+sales.clean <- sales[-which(is.na(sales$quantitySold) & is.na(sales$salesDollarAmount)),]
+
+# Total number of transactions with missing Quant by Product
+nnasQp <- tapply(sales.clean$quantitySold, list(sales.clean$productID), function(x) sum(is.na(x)))
+
+# Ration of missing quantitySold by product
+propNAsQp <- 100*nnasQp/table(sales.clean$productID)
+
+# Top 10 products with highest missing quantitySold
+propNAsQp[order(propNAsQp, decreasing=T)[1:10]]
+    #     p2442     p2443     p1653     p4101     p4243     p3678      p903     p3955     p4464     p1261 
+    # 100.00000 100.00000  90.90909  85.71429  68.42105  66.66667  66.66667  64.28571  63.63636  63.33333 
+
+# Remove the two products with 100% missing quantitySold
+sales.clean1 <- sales.clean[!sales.clean$productID %in% c('p2442', 'p2443'),]
+propNAsQp1 <- 100*nnasQp/table(sales.clean1$productID)
+propNAsQp1[order(propNAsQp1, decreasing=T)[1:10]]
+   # p2442    p2443    p1653    p4101    p4243    p3678     p903    p3955    p4464    p1261 
+   #   Inf      Inf 90.90909 85.71429 68.42105 66.66667 66.66667 64.28571 63.63636 63.33333 
+    
+# Repeat this process for salesDollarAmount
+nnasQs <- tapply(sales.clean1$salesDollarAmount, list(sales.clean1$productID), function(x) sum(is.na(x)))
+propNAsQs <- 100*nnasQs/table(sales.clean1$productID)
+propNAsQs[order(propNAsQs, decreasing=T)[1:10]]
+    #     p1110     p1022     p4491     p1462       p80     p4307     p4471     p2821     p1017     p4287 
+    # 25.000000 17.647059 10.000000  7.500000  6.250000  5.882353  5.882353  5.389222  5.263158  5.263158
+sales.clean2 <- sales.clean1[!sales.clean1$productID %in% c('p1110', 'p1022'),]
+propNAsQs1 <- 100*nnasQs/table(sales.clean2$productID)
+propNAsQs1[order(propNAsQs1, decreasing=T)[1:10]]
+    # p1022     p1110     p4491     p1462       p80     p4307     p4471     p2821     p1017     p4287 
+    #   Inf       Inf 10.000000  7.500000  6.250000  5.882353  5.882353  5.389222  5.263158  5.263158
+
+```
+
+# Explore the sales transaction missingness % with top 2 product (100% quant missing) removed
+```{r}
+nnasQs1 <- tapply(sales.clean2$quantitySold, list(sales.clean2$salespersonID), function(x) sum(is.na(x)))
+propNAsQs2 <- 100*nnasQs1/table(sales.clean2$salespersonID)
+propNAsQs2[order(propNAsQs2, decreasing=T)[1:10]]
+    #     v2925     v5537     v5836     v6058     v6065     v4368     v2923     v2970     v4910     v4542 
+    # 100.00000 100.00000 100.00000 100.00000 100.00000  88.88889  87.50000  85.71429  83.33333  80.95238
+
+```
+
+# Explore the missing by product
+```{r}
+# reminder: i cleaned out values for p1022 and p1110
+nnasVp <- tapply(sales.clean2$salesDollarAmount, list(sales.clean2$productID), function(x) sum(is.na(x)))
+propNAsVp <- 100*nnasVp/table(sales.clean2$productID)
+propNAsVp[order(propNAsVp, decreasing = T)[1:10]]
+    #     p4491     p1462       p80     p4307     p4471     p2821     p1017     p4287     p2339     p2707 
+    # 10.000000  7.500000  6.250000  5.882353  5.882353  5.389222  5.263158  5.263158  4.918033  4.166667 
+
+```
+
+# Imputing missing values
+```{r}
+head(sales.clean2)
+
+# Want to handle the missingness, first get the median for non-fraud sales and identify records with either quantitySold or salesDollarAmount missing.
+
+# Retrieve non-fraud median price by product
+tPrice <- tapply(sales.clean2[sales.clean2$inpsectionStatus != 'fraud', 'Uprice'], list(sales.clean2[sales.clean2$inpsectionStatus != 'fraud', 'productID']), median, na.rm=T)
+
+# Tag transactions with missing quantitySold values
+noQuant <- which(is.na(sales.clean2$quantitySold))
+
+# Tag transactions with missing salesDollarAmount values
+noVal <- which(is.na(sales.clean2$salesDollarAmount))
+
+# Estimate missing product quantity by estimating them using the ratio of sales dollar value (salesDollarAmount) to product median price.
+# Impute the missing quantitySold values using salesDollarAmount and median price
+sales.clean2[noQuant, 'quantitySold'] <- ceiling(sales.clean2[noQuant, 'salesDollarAmount'] / tPrice[sales.clean2[noQuant, 'productID']])
+
+# We can impute the missing dollar value by plugging in the product of product quantity (quantitySold) and median price.
+sales.clean2[noVal, 'salesDollarAmount'] <- sales.clean2[noVal, 'quantitySold'] * tPrice[sales.clean2[noVal, 'productID']]
+
+# Derive the new price
+sales.clean2$Uprice <- sales.clean2$salesDollarAmount/sales.clean2$quantitySold
+
+
+```
